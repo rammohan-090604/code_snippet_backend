@@ -28,12 +28,12 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
-const port = 8000;
+const port = process.env.PORT || 8000;
 
 app.use(cors());
 app.use(bodyParser.json());
 
-const uri = 'mongodb+srv://mts:TNms75OJiHnOiCp4@userdata.ytjuj.mongodb.net/?retryWrites=true&w=majority&appName=UserData';
+const uri = process.env.CONNECTION_STRING;
 
 async function run(formData) {
     const client = new MongoClient(uri);
@@ -62,7 +62,7 @@ app.post('/api/submit', async (req, res) => {
     if (result.error) {
         res.status(500).json({ message: "Failed to submit form" });
     } else {
-        res.status(200).json({ message: "Form submitted successfully" });
+        res.status(200).json({ message: "Form submitted successfully, View More Courses in Courses Section..." });
     }
 });
 
