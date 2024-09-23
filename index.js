@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
@@ -35,7 +35,7 @@ async function insertData(formData) {
 
 // API endpoint for form submission
 app.post('/api/submit', async (req, res) => {
-    const formData = req.body;
+    const formData = { ...req.body, checked: false }; // Set checked to false by default
     const result = await insertData(formData);
     if (result.error) {
         res.status(500).json({ message: "Failed to submit form" });
@@ -44,7 +44,7 @@ app.post('/api/submit', async (req, res) => {
     }
 });
 
-// Function to retrieve all data from the database
+// Function to retrieve all unchecked data from the database
 async function getData() {
     const client = new MongoClient(uri);
     await client.connect();
@@ -54,7 +54,8 @@ async function getData() {
     const collection = database.collection(collectionName);
 
     try {
-        const data = await collection.find({}).toArray();
+        // Only get documents where checked is false
+        const data = await collection.find({ checked: false }).toArray(); 
         console.log(`${data.length} documents found.\n`);
         return data;
     } catch (err) {
@@ -72,6 +73,42 @@ app.get('/api/data', async (req, res) => {
         res.status(500).json({ message: "Failed to retrieve data" });
     } else {
         res.status(200).json(result); // Send the retrieved data to the client
+    }
+});
+
+
+// Function to update the checked status
+async function updateCheckedStatus(id) {
+    const client = new MongoClient(uri);
+    await client.connect();
+    const dbName = "MadhuTechSkills";
+    const collectionName = "formData";
+    const database = client.db(dbName);
+    const collection = database.collection(collectionName);
+
+    try {
+        const updateResult = await collection.updateOne(
+            { _id: new ObjectId(id) }, // Convert id to ObjectId
+            { $set: { checked: true } } // Set checked to true
+        );
+        console.log(`${updateResult.modifiedCount} document(s) updated.`);
+        return { message: "Checked status updated successfully." };
+    } catch (err) {
+        console.error(`Something went wrong trying to update the document: ${err}\n`);
+        return { error: "Failed to update checked status." };
+    } finally {
+        await client.close();
+    }
+}
+
+// API endpoint to update the checked status
+app.put('/api/updateChecked', async (req, res) => {
+    const { id } = req.body; // Expecting the id to be passed in the body
+    const result = await updateCheckedStatus(id);
+    if (result.error) {
+        res.status(500).json({ message: "Failed to update checked status" });
+    } else {
+        res.status(200).json(result);
     }
 });
 
