@@ -7,7 +7,9 @@ const bodyParser = require('body-parser');
 const app = express();
 const port = process.env.PORT || 8000;
 
-app.use(cors());
+// Allow all origins for CORS
+app.use(cors()); // This allows all origins
+
 app.use(bodyParser.json());
 
 const uri = process.env.CONNECTION_STRING;
@@ -54,7 +56,6 @@ async function getData() {
     const collection = database.collection(collectionName);
 
     try {
-        // Only get documents where checked is false
         const data = await collection.find({ checked: false }).toArray(); 
         console.log(`${data.length} documents found.\n`);
         return data;
@@ -76,7 +77,6 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
-
 // Function to update the checked status
 async function updateCheckedStatus(id) {
     const client = new MongoClient(uri);
@@ -88,8 +88,8 @@ async function updateCheckedStatus(id) {
 
     try {
         const updateResult = await collection.updateOne(
-            { _id: new ObjectId(id) }, // Convert id to ObjectId
-            { $set: { checked: true } } // Set checked to true
+            { _id: new ObjectId(id) },
+            { $set: { checked: true } }
         );
         console.log(`${updateResult.modifiedCount} document(s) updated.`);
         return { message: "Checked status updated successfully." };
