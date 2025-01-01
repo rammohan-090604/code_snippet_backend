@@ -8,107 +8,183 @@ const app = express();
 const port = process.env.PORT || 8000;
 
 // Allow all origins for CORS
-app.use(cors()); // This allows all origins
+app.use(cors());
 
 app.use(bodyParser.json());
 
 const uri = process.env.CONNECTION_STRING;
 
-// Function to insert form data into the database
-async function insertData(formData) {
+// Function to insert or update code data
+async function insertOrUpdateCode(email, name, language, code) {
     const client = new MongoClient(uri);
     await client.connect();
-    const dbName = "MadhuTechSkills";
-    const collectionName = "formData";
+    const dbName = "CodeIT"; // Database name
+    const collectionName = "users_codes"; // Collection to store user codes
     const database = client.db(dbName);
     const collection = database.collection(collectionName);
 
     try {
-        const insertOneResult = await collection.insertOne(formData);
-        console.log(`${insertOneResult.insertedCount} document successfully inserted.\n`);
-        return { message: "Form data successfully inserted." };
+        // Check if the user (email) already exists
+        const user = await collection.findOne({ email });
+
+        if (user) {
+            // If the user exists, push the new code snippet to the user's codes array
+            const updateResult = await collection.updateOne(
+                { email }, // Find the user by email
+                { 
+                    $push: { codes: { name, language, code, date: new Date() } } // Push the new code snippet
+                }
+            );
+            console.log(`${updateResult.modifiedCount} document(s) updated with new code.`);
+            return { message: "Code added to existing user." };
+        } else {
+            // If the user does not exist, create a new user record and insert the code
+            const insertResult = await collection.insertOne({
+                email,
+                codes: [{ name, language, code, date: new Date() }]
+            });
+            console.log(`${insertResult.insertedCount} new document inserted.`);
+            return { message: "New user created and code saved." };
+        }
     } catch (err) {
-        console.error(`Something went wrong trying to insert the document: ${err}\n`);
-        return { error: "Failed to insert document." };
+        console.error(`Something went wrong: ${err}`);
+        return { error: "Failed to insert or update code." };
     } finally {
         await client.close();
     }
 }
 
-// API endpoint for form submission
-app.post('/api/submit', async (req, res) => {
-    const formData = { ...req.body, checked: false }; // Set checked to false by default
-    const result = await insertData(formData);
+// API endpoint to submit code for a user
+app.post('/api/submitCode', async (req, res) => {
+    const { email, name, language, code } = req.body;
+
+    // Ensure that all fields are provided
+    if (!email || !name || !language || !code) {
+        return res.status(400).json({ message: "Email, name, language, and code are required." });
+    }
+
+    const result = await insertOrUpdateCode(email, name, language, code);
     if (result.error) {
-        res.status(500).json({ message: "Failed to submit form" });
+        res.status(500).json({ message: result.error });
     } else {
-        res.status(200).json({ message: "Form submitted successfully, View More Courses in Courses Section..." });
+        res.status(200).json({ message: result.message });
     }
 });
 
-// Function to retrieve all unchecked data from the database
-async function getData() {
+// Function to get code names and languages for a user by email
+async function getCodeNamesAndLanguages(email) {
     const client = new MongoClient(uri);
     await client.connect();
-    const dbName = "MadhuTechSkills";
-    const collectionName = "formData";
+    const dbName = "CodeIT"; // Database name
+    const collectionName = "users_codes"; // Collection to store user codes
     const database = client.db(dbName);
     const collection = database.collection(collectionName);
 
     try {
-        const data = await collection.find({ checked: false }).toArray(); 
-        console.log(`${data.length} documents found.\n`);
-        return data;
+        // Find the user by email and return the code names and languages
+        const user = await collection.findOne({ email }, { projection: { "codes.name": 1, "codes.language": 1 } });
+
+        if (user) {
+            const codeDetails = user.codes.map(code => ({
+                name: code.name,
+                language: code.language
+            }));
+            return codeDetails;
+        } else {
+            return { message: "User not found." };
+        }
     } catch (err) {
-        console.error(`Something went wrong trying to retrieve the documents: ${err}\n`);
-        return { error: "Failed to retrieve documents." };
+        console.error(`Something went wrong: ${err}`);
+        return { error: "Failed to retrieve code names and languages." };
     } finally {
         await client.close();
     }
 }
 
-// API endpoint to fetch all data
-app.get('/api/data', async (req, res) => {
-    const result = await getData();
-    if (result.error) {
-        res.status(500).json({ message: "Failed to retrieve data" });
-    } else {
-        res.status(200).json(result); // Send the retrieved data to the client
+// API endpoint to get code names and languages for a user by email
+app.get('/api/getCodeNamesAndLanguages', async (req, res) => {
+    const { email } = req.query;
+
+    if (!email) {
+        return res.status(400).json({ message: "Email is required." });
     }
-});
 
-// Function to update the checked status
-async function updateCheckedStatus(id) {
-    const client = new MongoClient(uri);
-    await client.connect();
-    const dbName = "MadhuTechSkills";
-    const collectionName = "formData";
-    const database = client.db(dbName);
-    const collection = database.collection(collectionName);
-
-    try {
-        const updateResult = await collection.updateOne(
-            { _id: new ObjectId(id) },
-            { $set: { checked: true } }
-        );
-        console.log(`${updateResult.modifiedCount} document(s) updated.`);
-        return { message: "Checked status updated successfully." };
-    } catch (err) {
-        console.error(`Something went wrong trying to update the document: ${err}\n`);
-        return { error: "Failed to update checked status." };
-    } finally {
-        await client.close();
-    }
-}
-
-// API endpoint to update the checked status
-app.put('/api/updateChecked', async (req, res) => {
-    const { id } = req.body; // Expecting the id to be passed in the body
-    const result = await updateCheckedStatus(id);
+    const result = await getCodeNamesAndLanguages(email);
     if (result.error) {
-        res.status(500).json({ message: "Failed to update checked status" });
+        res.status(500).json({ message: result.error });
     } else {
         res.status(200).json(result);
+    }
+});
+
+// Function to get the full code of a user by email and name
+async function getFullCodeByName(email, name) {
+    const client = new MongoClient(uri);
+    await client.connect();
+    const dbName = "CodeIT"; // Database name
+    const collectionName = "users_codes"; // Collection to store user codes
+    const database = client.db(dbName);
+    const collection = database.collection(collectionName);
+
+    try {
+        // Find the user by email and retrieve the full code for the specific name
+        const user = await collection.findOne(
+            { email, "codes.name": name },
+            { projection: { "codes.$": 1 } } // Return only the matching code
+        );
+
+        if (user) {
+            return user.codes[0]; // Return the matching code
+        } else {
+            return { message: "Code with the given name not found." };
+        }
+    } catch (err) {
+        console.error(`Something went wrong: ${err}`);
+        return { error: "Failed to retrieve the full code." };
+    } finally {
+        await client.close();
+    }
+}
+
+// API endpoint to get the full code for a specific name and user email
+app.get('/api/getFullCode', async (req, res) => {
+    const { email, name } = req.query;
+
+    if (!email || !name) {
+        return res.status(400).json({ message: "Email and name are required." });
+    }
+
+    const result = await getFullCodeByName(email, name);
+    if (result.error) {
+        res.status(500).json({ message: result.error });
+    } else {
+        res.status(200).json(result);
+    }
+});
+
+async function checkDatabaseConnection() {
+    const client = new MongoClient(uri);
+    try {
+        // Attempt to connect to the database
+        await client.connect();
+        console.log("Successfully connected to the database.");
+        return { message: "Database connection successful!" };
+    } catch (err) {
+        console.error("Database connection failed:", err);
+        return { error: "Database connection failed." };
+    } finally {
+        // Ensure the client is closed after the operation
+        await client.close();
+    }
+}
+
+// API endpoint to check the database connectivity
+app.get('/api/checkDatabase', async (req, res) => {
+    const result = await checkDatabaseConnection();
+    if (result.error) {
+        res.status(500).json({ message: result.error });
+    } else {
+        res.status(200).json({ message: result.message });
     }
 });
 
